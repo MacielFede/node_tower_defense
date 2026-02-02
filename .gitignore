@@ -1,0 +1,74 @@
+####################################
+# Node / npm
+####################################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+####################################
+# Environment variables
+####################################
+.env
+.env.*
+!.env.example
+
+####################################
+# Build / Output
+####################################
+dist/
+build/
+out/
+.tmp/
+.cache/
+
+####################################
+# Logs
+####################################
+logs/
+*.log
+
+####################################
+# Game Assets (Generated / Exported)
+####################################
+*.mp4
+*.webm
+*.mov
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+*.pak
+*.bundle
+*.assetbundle
+*.map
+
+####################################
+# Save files / Runtime data
+####################################
+saves/
+replays/
+profiles/
+*.sav
+*.save
+*.dat
+*.db
+*.sqlite
+*.sqlite3
+
+####################################
+# Debug
+####################################
+*.dmp
+*.dump
+*.trace
+*.pid
+
+####################################
+# OS junk
+#########

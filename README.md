@@ -30,18 +30,21 @@ The core game loop runs waves of enemies along a grid path, with a tower that ha
   - Moves enemies each tick
   - Lets towers fire based on cooldown and range
   - Decrements player health when enemies reach the end
-- `server/index.ts` – minimal Express server that starts the game loop when `/` is hit.
+- `server/index.ts` – Express + WebSocket server:
+  - Runs the authoritative simulation once
+  - Streams state snapshots to clients over WebSockets (`/ws`)
 
 **Run the server**
 
 From the repo root:
 
 ```bash
-npm install            # installs root dev deps (TypeScript, tsx, etc.)
-npm start              # runs ./server/index.ts via tsx
+cd server
+npm install
+npm start
 ```
 
-Then open `http://localhost:3000` – this will start the game loop on the server and log activity (waves, enemy hits, etc.) in the console.
+Then open `http://localhost:3000` (optional) and/or connect a client to `ws://localhost:3000/ws`.
 
 ---
 
@@ -54,7 +57,7 @@ The client is a **Phaser 3 + TypeScript** app that recreates the same simulation
 - **Enemies** moving along the path with simple health bars
 - **Wave state** (waiting/spawning/active), enemy counts, and player health as HUD
 
-> Note: Right now the client runs its own simulation (no network connection to the Express server). It mirrors the server-side logic but is not yet authoritative-server driven.
+> Note: The client connects to the server via WebSockets and renders the server’s authoritative snapshots.
 
 **Client layout**
 

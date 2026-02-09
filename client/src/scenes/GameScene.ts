@@ -1,30 +1,50 @@
 import Phaser from "phaser";
-import { GameState, type Point, type Tower } from "../sim/GameState";
 
 type WaveState = "waiting" | "spawning" | "active";
 
-export class GameScene extends Phaser.Scene {
-  private gameState!: GameState;
-
-  private readonly gameTickIntervalMs = 500;
-  private towerBaseCooldowns = new Map<string, number>();
-
-  private currentWave = 0;
-  private waveState: WaveState = "waiting";
-  private enemiesToSpawn = 0;
-  private enemiesSpawned = 0;
-  private nextSpawnTimeMs = 0;
-  private waveStartTimeMs = 0;
-
-  private readonly waveConfig = {
-    timeBetweenWaves: 5000,
-    timeBetweenSpawns: 1000,
-    baseEnemiesPerWave: 5,
-    enemyHealthScaling: 20,
-    enemySpeedScaling: 1,
-    baseEnemyHealth: 100,
-    baseEnemySpeed: 10,
+type GameSnapshot = {
+  serverTimeMs: number;
+  userHealth: number;
+  wave: {
+    currentWave: number;
+    state: WaveState;
+    enemiesToSpawn: number;
+    enemiesSpawned: number;
+    nextSpawnTimeMs: number;
+    waveStartTimeMs: number;
+    config: {
+      timeBetweenWaves: number;
+      timeBetweenSpawns: number;
+      baseEnemiesPerWave: number;
+      enemyHealthScaling: number;
+      enemySpeedScaling: number;
+      baseEnemyHealth: number;
+      baseEnemySpeed: number;
+    };
   };
+  grid: number[][];
+  path: { x: number; y: number }[];
+  enemies: {
+    id: string;
+    name: string;
+    location: number;
+    health: number;
+    speed: number;
+  }[];
+  towers: {
+    id: string;
+    location: { x: number; y: number };
+    range: number;
+    cooldown: number;
+    damage: number;
+    baseCooldownMs: number;
+  }[];
+};
+
+export class GameScene extends Phaser.Scene {
+  private ws: WebSocket | null = null;
+  private latestSnapshot: GameSnapshot | null = null;
+  private snapshotDirty = false;
 
   // Rendering config
   private readonly cellSize = 48;
@@ -40,20 +60,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    this.gameState = new GameState();
-
-    // One starter tower (mirrors server skeleton)
-    const tower: Tower = {
-      cooldown: 0,
-      damage: 50,
-      id: "MyTower",
-      location: { x: 3, y: 4 },
-      range: 5,
-    };
-    const baseCooldownMs = 1000;
-    this.towerBaseCooldowns.set(tower.id, baseCooldownMs);
-    this.gameState.spawnTower(tower);
-
     this.gGrid = this.add.graphics();
     this.gEntities = this.add.graphics();
 
@@ -65,104 +71,52 @@ export class GameScene extends Phaser.Scene {
         color: "#e6eefc",
       })
       .setDepth(10);
-
-    // Wave timing
-    this.waveStartTimeMs = this.time.now;
-
-    // Start first wave shortly after boot
-    this.time.delayedCall(2000, () => {
-      this.startWave();
-    });
-
-    // Tick loop (mirrors server gameLoop cadence)
-    this.time.addEvent({
-      delay: this.gameTickIntervalMs,
-      loop: true,
-      callback: () => this.tick(),
-    });
-  }
-
-  private tick() {
-    if (this.gameState.userHealth <= 0) return;
-
-    // Wave management
-    if (this.waveState === "waiting") {
-      if (
-        this.time.now - this.waveStartTimeMs >=
-        this.waveConfig.timeBetweenWaves
-      ) {
-        this.startWave();
-      }
-    } else if (this.waveState === "spawning") {
-      if (this.time.now >= this.nextSpawnTimeMs) {
-        this.spawnNextEnemyInWave();
-      }
-    } else if (this.waveState === "active") {
-      if (this.gameState.getEnemyCount() === 0) {
-        this.waveState = "waiting";
-        this.waveStartTimeMs = this.time.now;
-      }
-    }
-
-    // Mechanics (movement + towers firing w/ cooldown)
-    this.gameState.moveEnemysForward();
-    this.gameState.getTowers().forEach((tower) => {
-      tower.cooldown = Math.max(0, tower.cooldown - this.gameTickIntervalMs);
-      if (tower.cooldown !== 0) return;
-
-      const enemyId = this.gameState.targetEnemy(tower.location, tower.range);
-      if (!enemyId) return;
-
-      this.gameState.fireEnemy(tower.damage, enemyId);
-      tower.cooldown = this.towerBaseCooldowns.get(tower.id) ?? 0;
-    });
-
+    this.connectWebSocket();
     this.renderFrame();
   }
 
-  private startWave() {
-    this.currentWave++;
-    this.waveState = "spawning";
-    this.enemiesToSpawn =
-      this.waveConfig.baseEnemiesPerWave + Math.floor(this.currentWave * 1.5);
-    this.enemiesSpawned = 0;
-    this.nextSpawnTimeMs = this.time.now;
-    this.waveStartTimeMs = this.time.now;
+  update() {
+    if (this.snapshotDirty) {
+      this.snapshotDirty = false;
+      this.renderFrame();
+    }
   }
 
-  private spawnNextEnemyInWave() {
-    if (this.enemiesSpawned >= this.enemiesToSpawn) return;
+  private connectWebSocket() {
+    const url = `ws://${window.location.hostname}:3000/ws`;
+    this.ws = new WebSocket(url);
 
-    const enemyId = crypto.randomUUID();
-    const enemyHealth =
-      this.waveConfig.baseEnemyHealth +
-      this.currentWave * this.waveConfig.enemyHealthScaling;
-    const enemySpeed =
-      this.waveConfig.baseEnemySpeed +
-      this.currentWave * this.waveConfig.enemySpeedScaling;
+    this.ws.addEventListener("message", (evt) => {
+      try {
+        const msg = JSON.parse(String(evt.data));
+        if (msg?.type === "snapshot" && msg.snapshot) {
+          this.latestSnapshot = msg.snapshot as GameSnapshot;
+          this.snapshotDirty = true;
+        }
+      } catch {
+        // ignore malformed messages
+      }
+    });
 
-    this.gameState.spawnEnemy(enemyId, enemyHealth, enemySpeed);
-    this.enemiesSpawned++;
-
-    if (this.enemiesSpawned < this.enemiesToSpawn) {
-      this.nextSpawnTimeMs = this.time.now + this.waveConfig.timeBetweenSpawns;
-    } else {
-      this.waveState = "active";
-    }
+    this.ws.addEventListener("close", () => {
+      this.ws = null;
+    });
   }
 
   private renderFrame() {
     this.gGrid.clear();
     this.gEntities.clear();
 
-    this.drawGridAndPath();
-    this.drawTowers();
-    this.drawEnemies();
-    this.drawHud();
+    if (this.latestSnapshot) {
+      this.drawGridAndPath(this.latestSnapshot);
+      this.drawTowers(this.latestSnapshot);
+      this.drawEnemies(this.latestSnapshot);
+    }
+    this.drawHud(this.latestSnapshot);
   }
 
-  private drawGridAndPath() {
-    const grid = this.gameState.getGrid();
+  private drawGridAndPath(snapshot: GameSnapshot) {
+    const grid = snapshot.grid;
 
     // background tiles
     for (let x = 0; x < grid.length; x++) {
@@ -186,7 +140,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // path overlay
-    const path = this.gameState.getPath();
+    const path = snapshot.path;
     this.gGrid.lineStyle(6, 0x2dd4bf, 0.5);
     for (let i = 0; i < path.length - 1; i++) {
       const a = this.cellCenter(path[i]!);
@@ -195,8 +149,8 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private drawTowers() {
-    const towers = this.gameState.getTowers();
+  private drawTowers(snapshot: GameSnapshot) {
+    const towers = snapshot.towers;
     towers.forEach((tower) => {
       const c = this.cellCenter(tower.location);
 
@@ -210,7 +164,7 @@ export class GameScene extends Phaser.Scene {
       this.gEntities.fillCircle(c.x, c.y, 12);
 
       // cooldown indicator
-      const base = this.towerBaseCooldowns.get(tower.id) ?? 1;
+      const base = tower.baseCooldownMs || 1;
       const pct = Phaser.Math.Clamp(1 - tower.cooldown / base, 0, 1);
       this.gEntities.fillStyle(0x0b0f17, 0.9);
       this.gEntities.fillCircle(c.x, c.y, 7);
@@ -219,9 +173,9 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private drawEnemies() {
-    const enemies = this.gameState.getEnemies();
-    const path = this.gameState.getPath();
+  private drawEnemies(snapshot: GameSnapshot) {
+    const enemies = snapshot.enemies;
+    const path = snapshot.path;
 
     enemies.forEach((enemy) => {
       const p = path[enemy.location];
@@ -235,8 +189,8 @@ export class GameScene extends Phaser.Scene {
 
       // health bar
       const maxHealth =
-        this.waveConfig.baseEnemyHealth +
-        this.currentWave * this.waveConfig.enemyHealthScaling;
+        snapshot.wave.config.baseEnemyHealth +
+        snapshot.wave.currentWave * snapshot.wave.config.enemyHealthScaling;
       const hpPct = Phaser.Math.Clamp(enemy.health / maxHealth, 0, 1);
       const barW = 26;
       const barH = 5;
@@ -250,30 +204,40 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private drawHud() {
+  private drawHud(snapshot: GameSnapshot | null) {
+    if (!snapshot) {
+      this.hudText.setText(
+        `Connecting to server...\nExpected: ws://${window.location.hostname}:3000/ws`
+      );
+      return;
+    }
+
+    const cfg = snapshot.wave.config;
     const nextWaveIn =
-      this.waveState === "waiting"
+      snapshot.wave.state === "waiting"
         ? Math.max(
             0,
             Math.ceil(
-              (this.waveConfig.timeBetweenWaves -
-                (this.time.now - this.waveStartTimeMs)) /
+              (cfg.timeBetweenWaves -
+                (snapshot.serverTimeMs - snapshot.wave.waveStartTimeMs)) /
                 1000
             )
           )
         : 0;
 
-    const text = this.gameState.userHealth <= 0 ? `Game Over\n` : "";
+    const text = snapshot.userHealth <= 0 ? `Game Over\n` : "";
 
     this.hudText.setText(
-      `${text}Health: ${this.gameState.userHealth}\nWave: ${
-        this.currentWave
-      } (${this.waveState})\nEnemies: ${this.gameState.getEnemyCount()}\n` +
-        (this.waveState === "waiting" ? `Next wave in: ${nextWaveIn}s` : "")
+      `${text}Health: ${snapshot.userHealth}\n` +
+        `Wave: ${snapshot.wave.currentWave} (${snapshot.wave.state})\n` +
+        `Enemies: ${snapshot.enemies.length}\n` +
+        (snapshot.wave.state === "waiting"
+          ? `Next wave in: ${nextWaveIn}s`
+          : "")
     );
   }
 
-  private cellCenter(p: Point) {
+  private cellCenter(p: { x: number; y: number }) {
     return {
       x: this.gridOrigin.x + p.x * this.cellSize + this.cellSize / 2,
       y: this.gridOrigin.y + p.y * this.cellSize + this.cellSize / 2,

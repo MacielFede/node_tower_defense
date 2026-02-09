@@ -83,7 +83,7 @@ export class GameState {
       });
     }
     console.log(parentForCell);
-    const path = [];
+    const path: Point[] = [];
 
     let currentKey = targetKey;
     let currentPosition = endPosition;
@@ -125,6 +125,14 @@ export class GameState {
       health,
       speed,
     });
+  }
+
+  public getGrid() {
+    return this.grid;
+  }
+
+  public getPath() {
+    return this.path;
   }
 
   public getEnemyCount(): number {

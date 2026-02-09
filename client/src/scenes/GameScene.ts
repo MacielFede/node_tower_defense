@@ -1,45 +1,5 @@
 import Phaser from "phaser";
-
-type WaveState = "waiting" | "spawning" | "active";
-
-type GameSnapshot = {
-  serverTimeMs: number;
-  userHealth: number;
-  wave: {
-    currentWave: number;
-    state: WaveState;
-    enemiesToSpawn: number;
-    enemiesSpawned: number;
-    nextSpawnTimeMs: number;
-    waveStartTimeMs: number;
-    config: {
-      timeBetweenWaves: number;
-      timeBetweenSpawns: number;
-      baseEnemiesPerWave: number;
-      enemyHealthScaling: number;
-      enemySpeedScaling: number;
-      baseEnemyHealth: number;
-      baseEnemySpeed: number;
-    };
-  };
-  grid: number[][];
-  path: { x: number; y: number }[];
-  enemies: {
-    id: string;
-    name: string;
-    location: number;
-    health: number;
-    speed: number;
-  }[];
-  towers: {
-    id: string;
-    location: { x: number; y: number };
-    range: number;
-    cooldown: number;
-    damage: number;
-    baseCooldownMs: number;
-  }[];
-};
+import { GameSnapshot } from "../../../shared/types";
 
 export class GameScene extends Phaser.Scene {
   private ws: WebSocket | null = null;

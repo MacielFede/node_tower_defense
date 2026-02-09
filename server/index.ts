@@ -1,7 +1,8 @@
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
-import { startGameLoop, type GameSnapshot } from "./gameLoop.ts";
+import { startGameLoop } from "./gameLoop.ts";
+import { GameSnapshot } from "../shared/types.ts";
 
 const app = express();
 const PORT = 3000;

@@ -1,6 +1,5 @@
 interface Enemy {
   id: string;
-  name: string;
   location: number;
   health: number;
   speed: number;
@@ -121,7 +120,6 @@ export class GameState {
     this.enemies.push({
       id,
       location: 0,
-      name: `Enemy ${id}`,
       health,
       speed,
     });
